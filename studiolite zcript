@@ -1,0 +1,120 @@
+
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+
+-- 1. Hanapin ang Part/Model na "lol" sa Workspace
+local monster = Workspace:WaitForChild("lol")
+
+-- Siguraduhing maayos ang physics properties
+if monster:IsA("BasePart") then
+	monster.Anchored = false
+	monster.CanCollide = true
+elseif monster:IsA("Model") and monster.PrimaryPart then
+	monster.PrimaryPart.Anchored = false
+end
+
+-- 2. Bagong Nakakatakot na Sound Effect (ID: 9114223170)
+local chaseSound = Instance.new("Sound")
+chaseSound.Name = "ScaryHorrorSound"
+chaseSound.SoundId = "rbxassetid://9114223170" -- Mas nakakatakot na horror chase sound
+chaseSound.Volume = 5
+chaseSound.Looped = true
+chaseSound.Parent = monster
+
+-- 3. Physics Settings para sa paghabol
+local targetPart = monster:IsA("Model") and monster.PrimaryPart or monster
+
+local bodyGyro = Instance.new("BodyGyro")
+bodyGyro.MaxTorque = Vector3.new(0, math.huge, 0)
+bodyGyro.CFrame = targetPart.CFrame
+bodyGyro.Parent = targetPart
+
+local bodyVelocity = Instance.new("BodyVelocity")
+bodyVelocity.MaxForce = Vector3.new(40000, 0, 40000)
+bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+bodyVelocity.Parent = targetPart
+
+local stareData = {}
+
+-- 4. Stare Accumulator Loop (10 Seconds Total)
+task.spawn(function()
+	while true do
+		task.wait(0.1)
+		
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character and character:FindFirstChild("HumanoidRootPart") then
+				local hrp = character.HumanoidRootPart
+				local userId = player.UserId
+				
+				if not stareData[userId] then
+					stareData[userId] = { accumulatedTime = 0, isChasing = false, currentlyLooking = false }
+				end
+				
+				local data = stareData[userId]
+				
+				local lookVector = hrp.CFrame.LookVector
+				local directionToMonster = (targetPart.Position - hrp.Position).Unit
+				local dotProduct = lookVector:Dot(directionToMonster)
+				
+				if dotProduct > 0.3 then
+					data.currentlyLooking = true
+					
+					if not data.isChasing then
+						data.accumulatedTime = data.accumulatedTime + 0.1
+						if data.accumulatedTime >= 10 then
+							data.isChasing = true
+						end
+					end
+				else
+					data.currentlyLooking = false
+				end
+			end
+		end
+	end
+end)
+
+-- 5. Movement & Audio Loop (Hahabol lang kapag nakatitig)
+task.spawn(function()
+	while true do
+		task.wait(0.05)
+		
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character and character:FindFirstChild("HumanoidRootPart") then
+				local hrp = character.HumanoidRootPart
+				local data = stareData[player.UserId]
+				
+				if data and data.isChasing and data.currentlyLooking then
+					if not chaseSound.IsPlaying then
+						chaseSound:Play()
+					end
+					
+					bodyGyro.CFrame = CFrame.new(targetPart.Position, hrp.Position)
+					local moveDirection = (hrp.Position - targetPart.Position).Unit
+					bodyVelocity.Velocity = moveDirection * 85
+					
+					local distance = (targetPart.Position - hrp.Position).Magnitude
+					if distance < 5 then
+						local humanoid = character:FindFirstChildOfClass("Humanoid")
+						if humanoid then
+							humanoid.Health = 0
+						end
+						
+						data.isChasing = false
+						data.accumulatedTime = 0
+						bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+						chaseSound:Stop()
+					end
+				else
+					if data and (not data.currentlyLooking or not data.isChasing) then
+						bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+						if chaseSound.IsPlaying then
+							chaseSound:Stop()
+						end
+					end
+				end
+			end
+		end
+	end
+end)
